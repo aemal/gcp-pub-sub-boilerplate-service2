@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pub/Sub Message Viewer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .message {
+            background-color: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .message pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .message-id {
+            color: #0066cc;
+            font-weight: bold;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 20px;
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pub/Sub Message Viewer</h1>
+    <div id="status" class="status">Connected</div>
+    <div id="messages"></div>
+
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const statusDiv = document.getElementById('status');
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        }
+
+        function createMessageElement(message) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `
+                <div class="message-id">Message ID: ${message.id}</div>
+                <div class="timestamp">Published: ${formatDate(message.publishTime)}</div>
+                <pre>${JSON.stringify(message.data, null, 2)}</pre>
+            `;
+            return div;
+        }
+
+        // Connect to SSE endpoint
+        const eventSource = new EventSource('/events');
+
+        eventSource.onmessage = function(event) {
+            const messages = JSON.parse(event.data);
+            messagesDiv.innerHTML = ''; // Clear existing messages
+            messages.forEach(message => {
+                messagesDiv.appendChild(createMessageElement(message));
+            });
+        };
+
+        eventSource.onerror = function() {
+            statusDiv.style.backgroundColor = '#f44336';
+            statusDiv.textContent = 'Disconnected';
+        };
+
+        // Initial load
+        fetch('/messages')
+            .then(response => response.json())
+            .then(data => {
+                data.messages.forEach(message => {
+                    messagesDiv.appendChild(createMessageElement(message));
+                });
+            })
+            .catch(error => {
+                console.error('Error loading messages:', error);
+                statusDiv.style.backgroundColor = '#f44336';
+                statusDiv.textContent = 'Error loading messages';
+            });
+    </script>
+</body>
+</html> 
