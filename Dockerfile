@@ -1,16 +1,12 @@
-FROM oven/bun:1 as builder
+FROM node:20-slim
 
 WORKDIR /app
-COPY package.json .
-COPY src/ src/
 
-RUN bun install
+COPY package*.json ./
+RUN npm install
 
-FROM oven/bun:1-slim
+COPY . .
 
-WORKDIR /app
-COPY --from=builder /app .
+EXPOSE 3001
 
-ENV NODE_ENV=production
-
-CMD ["bun", "run", "src/index.ts"] 
+CMD ["npm", "start"] 

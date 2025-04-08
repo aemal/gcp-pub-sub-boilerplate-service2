@@ -1,16 +1,17 @@
-name: Deploy Service 2 to Cloud Run
+name: Deploy Subscriber Service
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
       - 'service2/**'
+      - '.github/workflows/service2-deploy.yml'
+  workflow_dispatch:
 
 env:
-  PROJECT_ID: your-project-id
-  SERVICE_NAME: pubsub-subscriber
+  PROJECT_ID: gcp-pubsub-456020
   REGION: us-central1
+  SERVICE_NAME: pubsub-subscriber
 
 jobs:
   deploy:
@@ -20,29 +21,27 @@ jobs:
       id-token: 'write'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Google Auth
-        id: auth
-        uses: 'google-github-actions/auth@v2'
-        with:
-          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
-          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+    - id: auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
 
-      - name: Set up Cloud SDK
-        uses: 'google-github-actions/setup-gcloud@v2'
+    - name: Set up Cloud SDK
+      uses: 'google-github-actions/setup-gcloud@v2'
 
-      - name: Build and Push Container
-        run: |
-          cd service2
-          gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE_NAME
+    - name: Configure Docker
+      run: gcloud auth configure-docker
 
-      - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy $SERVICE_NAME \
-            --image gcr.io/$PROJECT_ID/$SERVICE_NAME \
-            --platform managed \
-            --region $REGION \
-            --allow-unauthenticated \
-            --set-env-vars="GOOGLE_CLOUD_PROJECT=$PROJECT_ID" 
+    - name: Build and Deploy
+      working-directory: ./service2
+      run: |
+        docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:${{ github.sha }} .
+        docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:${{ github.sha }}
+        gcloud run deploy $SERVICE_NAME \
+          --image gcr.io/$PROJECT_ID/$SERVICE_NAME:${{ github.sha }} \
+          --region $REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --set-env-vars="PUBSUB_PROJECT_ID=$PROJECT_ID" 

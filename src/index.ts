@@ -3,6 +3,8 @@ import cors from '@fastify/cors';
 import { PubSub } from '@google-cloud/pubsub';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import path from 'path';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -35,6 +37,18 @@ console.log('PubSub initialized with:', {
   projectId,
   apiEndpoint
 });
+
+// Load Pub/Sub configuration
+let pubsubConfig;
+try {
+  const configPath = path.resolve(process.cwd(), '../config/pubsub-config.json');
+  const configData = fs.readFileSync(configPath, 'utf8');
+  pubsubConfig = JSON.parse(configData);
+  console.log('Loaded Pub/Sub configuration:', pubsubConfig);
+} catch (error) {
+  console.error('Error loading Pub/Sub configuration:', error);
+  pubsubConfig = { topics: [] };
+}
 
 // Configuration
 const TOPIC_NAME = 'my-topic';
@@ -98,15 +112,10 @@ app.get('/health', async () => {
 // Get messages endpoint
 app.get('/messages', async (request, reply) => {
   try {
-    return { messages: messageQueue };
+    return messageQueue;
   } catch (error) {
-    console.error('Error fetching messages:', {
-      error: error.message,
-      code: error.code,
-      details: error.details,
-      stack: error.stack
-    });
-    return reply.code(500).send({ error: 'Failed to fetch messages', details: error.message });
+    console.error('Error getting messages:', error);
+    return reply.code(500).send({ error: 'Failed to get messages' });
   }
 });
 
@@ -118,25 +127,58 @@ app.get('/events', async (request, reply) => {
     'Connection': 'keep-alive'
   });
 
-  const client = reply.raw;
-  sseClients.add(client);
-
   // Send initial data
-  client.write(`data: ${JSON.stringify(messageQueue)}\n\n`);
+  reply.raw.write(`data: ${JSON.stringify(messageQueue)}\n\n`);
+
+  // Add client to the set
+  sseClients.add(reply.raw);
 
   // Remove client when connection closes
-  client.on('close', () => {
-    sseClients.delete(client);
+  request.raw.on('close', () => {
+    sseClients.delete(reply.raw);
   });
+});
+
+// Push notification endpoint for push notifications
+app.post('/notifications', async (request, reply) => {
+  try {
+    console.log('Received push notification in service2:');
+    console.log('Headers:', request.headers);
+    console.log('Body:', request.body);
+    
+    // In a real application, you would validate the Pub/Sub token here
+    // For local development with the emulator, we'll just log the message
+    
+    // Add the message to our queue for display
+    const messageData = {
+      id: 'push-' + Date.now(),
+      data: request.body,
+      publishTime: new Date().toISOString()
+    };
+    messageQueue.push(messageData);
+    
+    // Notify all SSE clients
+    sseClients.forEach(client => {
+      client.write(`data: ${JSON.stringify(messageQueue)}\n\n`);
+    });
+    
+    // Return 200 OK to acknowledge the message
+    return reply.code(200).send({ status: 'ok' });
+  } catch (error) {
+    console.error('Error processing push notification:', error);
+    return reply.code(500).send({ error: 'Failed to process notification' });
+  }
 });
 
 // Start the server
 const start = async () => {
   try {
-    await setupSubscription();
     await app.listen({ port: 3001, host: '0.0.0.0' });
     console.log('Subscriber service is running on port 3001');
     console.log('Using Pub/Sub Emulator:', !!process.env.PUBSUB_EMULATOR_HOST);
+    
+    // Set up subscription listener
+    await setupSubscription();
   } catch (err) {
     app.log.error(err);
     process.exit(1);
